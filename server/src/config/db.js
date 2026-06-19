@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
 
 const connectDB = async () => {
   const uri = process.env.MONGO_URI;
+  const useLocal = process.env.USE_LOCAL_DB !== 'false';
 
   // Check if URI is a placeholder
   const isPlaceholder =
@@ -9,8 +12,8 @@ const connectDB = async () => {
     uri.includes('YOUR_USERNAME') ||
     uri.includes('YOUR_PASSWORD');
 
-  if (isPlaceholder) {
-    return connectMemory();
+  if (useLocal || isPlaceholder) {
+    return connectLocalFileDB();
   }
 
   try {
@@ -19,28 +22,37 @@ const connectDB = async () => {
   } catch (err) {
     console.error('❌ MongoDB Atlas connection failed:', err.message);
     console.log('');
-    console.log('🔧 Most likely fix: Whitelist your IP in MongoDB Atlas:');
-    console.log('   1. Go to https://cloud.mongodb.com');
-    console.log('   2. Network Access → Add IP Address → Allow from Anywhere (0.0.0.0/0)');
-    console.log('');
-    console.log('⚠️  Falling back to in-memory MongoDB for now...');
-    await connectMemory();
+    console.log('⚠️  Falling back to local file-based MongoDB...');
+    await connectLocalFileDB();
   }
 };
 
-const connectMemory = async () => {
+const connectLocalFileDB = async () => {
   try {
     const { MongoMemoryServer } = require('mongodb-memory-server');
-    const mongod = await MongoMemoryServer.create();
+    const dbPath = path.join(__dirname, '../../data/db');
+    
+    if (!fs.existsSync(dbPath)) {
+      fs.mkdirSync(dbPath, { recursive: true });
+    }
+
+    console.log(`📡 Starting persistent local file database at: ${dbPath}`);
+    const mongod = await MongoMemoryServer.create({
+      instance: {
+        dbPath: dbPath,
+        storageEngine: 'wiredTiger',
+      },
+    });
     const uri = mongod.getUri();
     global.__MONGOD__ = mongod;
     const conn = await mongoose.connect(uri);
-    console.log(`✅ In-memory MongoDB running (data resets on restart)`);
-    console.log(`   Host: ${conn.connection.host}`);
+    console.log(`✅ Persistent local database connected (data saved in server/data/db)`);
+    console.log(`   URI: ${uri}`);
   } catch (err) {
-    console.error('❌ Failed to start in-memory MongoDB:', err.message);
+    console.error('❌ Failed to start persistent local MongoDB:', err.message);
     process.exit(1);
   }
 };
 
 module.exports = connectDB;
+

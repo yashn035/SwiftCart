@@ -8,6 +8,7 @@ const Product = require('../models/Product');
 
 const seed = async () => {
   let uri = process.env.MONGO_URI;
+  const useLocal = process.env.USE_LOCAL_DB !== 'false';
   let mongod;
 
   // Same fallback logic as db.js
@@ -17,15 +18,28 @@ const seed = async () => {
     uri.includes('YOUR_PASSWORD') ||
     uri === 'mongodb://localhost:27017/swiftcart';
 
-  if (isPlaceholder) {
+  if (useLocal || isPlaceholder) {
     try {
       const { MongoMemoryServer } = require('mongodb-memory-server');
-      mongod = await MongoMemoryServer.create();
+      const path = require('path');
+      const fs = require('fs');
+
+      const dbPath = path.join(__dirname, '../../data/db');
+      if (!fs.existsSync(dbPath)) {
+        fs.mkdirSync(dbPath, { recursive: true });
+      }
+
+      console.log(`📡 Starting persistent local file database for seeding at: ${dbPath}`);
+      mongod = await MongoMemoryServer.create({
+        instance: {
+          dbPath: dbPath,
+          storageEngine: 'wiredTiger',
+        },
+      });
       uri = mongod.getUri();
-      console.log('⚠️  Using in-memory MongoDB for seed (standalone run — data will be lost)');
-      console.log('   Tip: Run seed via the server process so data persists during the session.\n');
+      console.log('✅ Local persistent MongoDB started for seeding');
     } catch (err) {
-      console.error('❌ Failed to start in-memory MongoDB:', err.message);
+      console.error('❌ Failed to start persistent MongoDB for seeding:', err.message);
       process.exit(1);
     }
   }

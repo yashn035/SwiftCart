@@ -25,6 +25,10 @@ client/.env.local
 client/.env.*.local
 server/.env
 
+# Local Database
+server/data/
+data/
+
 # Editor / System files
 .vscode/
 .idea/
