@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, CreditCard, Lock, CheckCircle, ArrowLeft, Zap } from 'lucide-react';
+import { ShieldCheck, CreditCard, Lock, CheckCircle, ArrowLeft, Ticket, Gift } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { createOrder, verifyPayment } from '../api/orders';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 
@@ -13,6 +12,50 @@ export default function Checkout() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState('review'); // review | processing | success
+
+  // Premium Features: Coupons & Loyalty points
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discountPercent, discountAmount }
+  const [pointsInput, setPointsInput] = useState(0);
+  const [pointsAppliedDiscount, setPointsAppliedDiscount] = useState(0);
+
+  const subtotal = total;
+  const couponDiscount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+  const finalTotal = Math.max(0, subtotal - couponDiscount - pointsAppliedDiscount);
+
+  const handleApplyCoupon = async (e) => {
+    e.preventDefault();
+    if (!couponInput.trim()) return;
+
+    try {
+      const res = await api.post('/coupons/validate', {
+        code: couponInput,
+        orderAmount: subtotal,
+      });
+      setAppliedCoupon(res.data);
+      toast.success(`Coupon "${res.data.code}" applied: ₹${res.data.discountAmount} off!`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid coupon code');
+    }
+  };
+
+  const handleApplyPoints = (e) => {
+    e.preventDefault();
+    const pts = Number(pointsInput);
+    if (isNaN(pts) || pts < 0) {
+      toast.error('Invalid points number');
+      return;
+    }
+    const maxUserPoints = user?.rewardPoints || 0;
+    if (pts > maxUserPoints) {
+      toast.error(`You only have ${maxUserPoints} points available.`);
+      return;
+    }
+    // 1 point = ₹1, points cannot exceed subtotal after coupon discount
+    const applicablePoints = Math.min(pts, subtotal - couponDiscount);
+    setPointsAppliedDiscount(applicablePoints);
+    toast.success(`Applied ${applicablePoints} loyalty points as ₹${applicablePoints} discount.`);
+  };
 
   const handlePayment = async () => {
     if (items.length === 0) {
@@ -24,20 +67,22 @@ export default function Checkout() {
     setStep('processing');
 
     try {
-      // Step 1: Create order on backend (also creates Razorpay order)
-      const orderRes = await createOrder(
-        items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
+      // Create order with coupon and points applied
+      const orderRes = await api.post('/orders', {
+        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        couponCode: appliedCoupon?.code || '',
+        pointsApplied: pointsAppliedDiscount,
+      });
 
       const { orderId, razorpayOrderId, amount, currency, keyId, devMode } = orderRes.data;
 
-      // ── DEV MODE: no real Razorpay keys → auto-verify and skip modal ────────
+      // ── DEV MODE: mock Razorpay order and verification ──────────────────────
       if (devMode || keyId === 'DEV_MODE') {
         try {
-          await verifyPayment({ razorpayOrderId, razorpayPaymentId: null, razorpaySignature: null, orderId });
+          await api.post('/orders/verify-payment', { razorpayOrderId, razorpayPaymentId: null, razorpaySignature: null, orderId });
           clearCart();
           setStep('success');
-          toast.success('Order placed! (Demo mode — add Razorpay keys for live payments)');
+          toast.success('Order placed! (Demo mode — mock transaction complete)');
         } catch (err) {
           toast.error(err.response?.data?.message || 'Order failed');
           setStep('review');
@@ -46,7 +91,7 @@ export default function Checkout() {
         return;
       }
 
-      // ── PRODUCTION: open real Razorpay checkout modal ────────────────────────
+      // ── PRODUCTION: open real Razorpay modal ─────────────────────────────────
       const options = {
         key: keyId,
         amount,
@@ -66,7 +111,7 @@ export default function Checkout() {
         },
         handler: async (response) => {
           try {
-            await verifyPayment({
+            await api.post('/orders/verify-payment', {
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature,
@@ -100,7 +145,6 @@ export default function Checkout() {
     }
   };
 
-  // Success state
   if (step === 'success') {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 pt-20">
@@ -139,7 +183,7 @@ export default function Checkout() {
         <h1 className="text-3xl font-bold text-white mb-8">Checkout</h1>
 
         <div className="grid lg:grid-cols-5 gap-6">
-          {/* Order Review */}
+          {/* Order Review & Discounts */}
           <div className="lg:col-span-3 space-y-4">
             <div className="card">
               <h2 className="font-bold text-white mb-4 flex items-center gap-2">
@@ -168,19 +212,55 @@ export default function Checkout() {
               </div>
             </div>
 
-            {/* Delivery Info */}
+            {/* Coupons Card */}
             <div className="card">
-              <h2 className="font-bold text-white mb-4">Account Details</h2>
-              <div className="space-y-2 text-sm">
-                <div className="flex gap-2">
-                  <span className="text-gray-400 w-20">Name:</span>
-                  <span className="text-gray-100 font-medium">{user?.name}</span>
+              <h2 className="font-bold text-white mb-4 flex items-center gap-2">
+                <Ticket size={18} className="text-yellow-400" />
+                Apply Coupon
+              </h2>
+              <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value)}
+                  placeholder="ENTER CODE (e.g. FIRST20, SAVE10)"
+                  className="input-field py-2 text-sm flex-1"
+                />
+                <button type="submit" className="btn-primary py-2 text-sm px-6">Apply</button>
+              </form>
+              {appliedCoupon && (
+                <div className="mt-2 text-xs text-emerald-400 font-semibold">
+                  Coupon applied: {appliedCoupon.discountPercent}% off (saved ₹{appliedCoupon.discountAmount})
                 </div>
-                <div className="flex gap-2">
-                  <span className="text-gray-400 w-20">Email:</span>
-                  <span className="text-gray-100">{user?.email}</span>
+              )}
+            </div>
+
+            {/* Loyalty points card */}
+            <div className="card">
+              <h2 className="font-bold text-white mb-2 flex items-center gap-2">
+                <Gift size={18} className="text-cyan-400" />
+                Apply Loyalty Points
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">
+                You have <span className="font-bold text-white">{user?.rewardPoints || 0}</span> reward points available. 1 point = ₹1 discount.
+              </p>
+              <form onSubmit={handleApplyPoints} className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max={user?.rewardPoints || 0}
+                  value={pointsInput}
+                  onChange={(e) => setPointsInput(e.target.value)}
+                  placeholder="Points to apply"
+                  className="input-field py-2 text-sm flex-1"
+                />
+                <button type="submit" className="btn-secondary py-2 text-sm px-6">Apply Points</button>
+              </form>
+              {pointsAppliedDiscount > 0 && (
+                <div className="mt-2 text-xs text-cyan-400 font-semibold">
+                  Applied points discount: -₹{pointsAppliedDiscount}
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -192,8 +272,20 @@ export default function Checkout() {
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Subtotal ({items.length} items)</span>
-                  <span className="text-gray-200">₹{total.toLocaleString('en-IN')}</span>
+                  <span className="text-gray-200">₹{subtotal.toLocaleString('en-IN')}</span>
                 </div>
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-emerald-400">
+                    <span>Coupon Discount</span>
+                    <span>-₹{couponDiscount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {pointsAppliedDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-cyan-400">
+                    <span>Points Rebate</span>
+                    <span>-₹{pointsAppliedDiscount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Delivery</span>
                   <span className="text-emerald-400 font-medium">FREE</span>
@@ -204,7 +296,7 @@ export default function Checkout() {
                 <div className="flex justify-between items-center">
                   <span className="font-semibold text-gray-200">Total</span>
                   <span className="text-2xl font-black gradient-text">
-                    ₹{total.toLocaleString('en-IN')}
+                    ₹{finalTotal.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
@@ -229,7 +321,7 @@ export default function Checkout() {
                 ) : (
                   <>
                     <ShieldCheck size={18} />
-                    Pay ₹{total.toLocaleString('en-IN')}
+                    Pay ₹{finalTotal.toLocaleString('en-IN')}
                   </>
                 )}
               </button>

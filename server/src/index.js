@@ -15,11 +15,22 @@ const autoSeed = async () => {
     const bcrypt = require('bcryptjs');
     const Category = require('./models/Category');
     const Product = require('./models/Product');
+    const GiftCard = require('./models/GiftCard');
 
     const [adminH, sellerH, buyerH, seller2H] = await Promise.all([
       bcrypt.hash('admin123', 10), bcrypt.hash('seller123', 10),
       bcrypt.hash('buyer123', 10), bcrypt.hash('seller2123', 10),
     ]);
+    await Category.deleteMany({});
+    await Product.deleteMany({});
+    await GiftCard.deleteMany({});
+    
+    await GiftCard.insertMany([
+      { code: 'WELCOME100', value: 100, expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      { code: 'SWIFTCART500', value: 500, expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      { code: 'MEGA1000', value: 1000, expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) }
+    ]);
+
     await Category.insertMany([
       { name: 'Electronics', slug: 'electronics' }, { name: 'Clothing', slug: 'clothing' },
       { name: 'Books', slug: 'books' }, { name: 'Home & Garden', slug: 'home-garden' }, { name: 'Sports', slug: 'sports' },
@@ -87,6 +98,14 @@ app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/products', require('./routes/product.routes'));
 app.use('/api/orders', require('./routes/order.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/stores', require('./routes/store.routes'));
+app.use('/api/coupons', require('./routes/coupon.routes'));
+app.use('/api/tickets', require('./routes/ticket.routes'));
+app.use('/api/ai', require('./routes/ai.routes'));
+app.use('/api/payment', require('./routes/payment.routes'));
+app.use('/api/reviews', require('./routes/review.routes'));
+app.use('/api/chat', require('./routes/chat.routes'));
+
 
 // --- Health Check ---
 app.get('/api/health', (req, res) =>
@@ -115,6 +134,28 @@ io.on('connection', (socket) => {
   socket.on('joinBuyerRoom', (buyerId) => {
     socket.join(`buyer_${buyerId}`);
     console.log(`📦 Socket ${socket.id} joined room: buyer_${buyerId}`);
+  });
+
+  // Real-time Chat support
+  socket.on('joinRoom', (room) => {
+    socket.join(room);
+    console.log(`💬 Socket ${socket.id} joined chat room: ${room}`);
+  });
+
+  socket.on('sendMessage', async (data) => {
+    try {
+      const ChatMessage = require('./models/ChatMessage');
+      const msg = await ChatMessage.create({
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        message: data.message,
+        room: data.room
+      });
+      const populatedMsg = await msg.populate('senderId', 'name');
+      io.to(data.room).emit('receiveMessage', populatedMsg);
+    } catch (err) {
+      console.error('Socket message save error:', err);
+    }
   });
 
   socket.on('disconnect', () => {

@@ -1,12 +1,14 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ShoppingCart, Zap, User, LogOut, LayoutDashboard, Shield, Package, Menu, X } from 'lucide-react';
+import { ShoppingCart, Zap, User, LogOut, LayoutDashboard, Shield, Package, Menu, X, CreditCard, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useState } from 'react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { itemCount } = useCart();
+  const { lang, setLang, t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -20,17 +22,24 @@ export default function Navbar() {
   const isActive = (path) => location.pathname === path;
 
   const navLinks = [
-    { to: '/products', label: 'Shop' },
+    { to: '/products', label: t('shop') },
+    { to: '/compare', label: t('compare') },
   ];
 
+  if (user) {
+    navLinks.push({ to: '/support', label: t('support') });
+    navLinks.push({ to: '/wallet', label: t('myWallet'), icon: <CreditCard size={14} /> });
+    navLinks.push({ to: '/chat', label: t('chat'), icon: <MessageSquare size={14} /> });
+  }
+
   if (user?.role === 'seller') {
-    navLinks.push({ to: '/seller', label: 'Dashboard', icon: <LayoutDashboard size={14} /> });
+    navLinks.push({ to: '/seller', label: t('dashboard'), icon: <LayoutDashboard size={14} /> });
   }
   if (user?.role === 'admin') {
-    navLinks.push({ to: '/admin', label: 'Admin', icon: <Shield size={14} /> });
+    navLinks.push({ to: '/admin', label: t('admin'), icon: <Shield size={14} /> });
   }
   if (user?.role === 'buyer') {
-    navLinks.push({ to: '/orders', label: 'My Orders', icon: <Package size={14} /> });
+    navLinks.push({ to: '/orders', label: t('myOrders'), icon: <Package size={14} /> });
   }
 
   return (
@@ -81,6 +90,17 @@ export default function Navbar() {
               </Link>
             )}
 
+            {/* Language Switcher */}
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              className="bg-[#1b1b32] text-gray-300 text-xs font-semibold py-1.5 px-2.5 rounded-lg border border-white/10 focus:outline-none focus:border-primary-500/50 cursor-pointer"
+            >
+              <option value="en">EN</option>
+              <option value="hi">हिंदी (HI)</option>
+              <option value="mr">मराठी (MR)</option>
+            </select>
+
             {/* User Menu */}
             {user ? (
               <div className="relative">
@@ -112,15 +132,15 @@ export default function Navbar() {
                       className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-red-600/10 transition-colors"
                     >
                       <LogOut size={14} />
-                      Sign Out
+                      {t('signOut')}
                     </button>
                   </div>
                 )}
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Link to="/login" className="btn-secondary text-sm px-4 py-2">Sign In</Link>
-                <Link to="/register" className="btn-primary text-sm px-4 py-2">Get Started</Link>
+                <Link to="/login" className="btn-secondary text-sm px-4 py-2">{t('signIn')}</Link>
+                <Link to="/register" className="btn-primary text-sm px-4 py-2">{t('getStarted')}</Link>
               </div>
             )}
 

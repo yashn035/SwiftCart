@@ -1,13 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Package, Plus, Edit3, Trash2, TrendingUp, ShoppingBag,
-  X, Check, BarChart2, RefreshCw, DollarSign, Eye
+  X, Check, BarChart2, RefreshCw, DollarSign, Eye, Upload
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
-import { getSellerProducts, createProduct, updateProduct, deleteProduct } from '../api/products';
+import { getSellerProducts, createProduct, updateProduct, deleteProduct, bulkCreateProducts } from '../api/products';
 import { getSellerOrders, getSellerAnalytics, updateOrderStatus } from '../api/orders';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -27,12 +27,46 @@ const EMPTY_FORM = { name: '', description: '', price: '', category: '', stock: 
 function ProductModal({ product, onClose, onSave }) {
   const [form, setForm] = useState(
     product
-      ? { ...product, images: product.images?.join(', ') || '', price: String(product.price), stock: String(product.stock) }
-      : EMPTY_FORM
+      ? {
+          ...product,
+          images: product.images?.join(', ') || '',
+          price: String(product.price),
+          stock: String(product.stock),
+          discountPercent: String(product.discountPercent || 0),
+        }
+      : { name: '', description: '', price: '', category: '', stock: '', images: '', discountPercent: '0' }
   );
+  const [variants, setVariants] = useState(product?.variants || []);
+  const [newVarSize, setNewVarSize] = useState('');
+  const [newVarColor, setNewVarColor] = useState('');
+  const [newVarPrice, setNewVarPrice] = useState('');
+  const [newVarStock, setNewVarStock] = useState('');
+
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+
+  const handleAddVariant = () => {
+    if (!newVarSize && !newVarColor) {
+      toast.error('Add either size or color for variant');
+      return;
+    }
+    const val = {
+      size: newVarSize,
+      color: newVarColor,
+      price: Number(newVarPrice) || Number(form.price) || 0,
+      stock: Number(newVarStock) || 0,
+    };
+    setVariants([...variants, val]);
+    setNewVarSize('');
+    setNewVarColor('');
+    setNewVarPrice('');
+    setNewVarStock('');
+  };
+
+  const handleRemoveVariant = (idx) => {
+    setVariants(variants.filter((_, i) => i !== idx));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,7 +76,9 @@ function ProductModal({ product, onClose, onSave }) {
         ...form,
         price: Number(form.price),
         stock: Number(form.stock),
+        discountPercent: Number(form.discountPercent) || 0,
         images: form.images ? form.images.split(',').map((s) => s.trim()).filter(Boolean) : [],
+        variants,
       };
       if (product) {
         await updateProduct(product._id, payload);
@@ -88,7 +124,7 @@ function ProductModal({ product, onClose, onSave }) {
             </div>
           ))}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Price (₹)</label>
               <input name="price" type="number" min="0" step="0.01" value={form.price} onChange={handleChange}
@@ -98,6 +134,11 @@ function ProductModal({ product, onClose, onSave }) {
               <label className="block text-sm font-medium text-gray-300 mb-2">Stock</label>
               <input name="stock" type="number" min="0" value={form.stock} onChange={handleChange}
                 className="input-field" placeholder="50" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Discount (%)</label>
+              <input name="discountPercent" type="number" min="0" max="100" value={form.discountPercent} onChange={handleChange}
+                className="input-field" placeholder="0" />
             </div>
           </div>
 
@@ -116,6 +157,30 @@ function ProductModal({ product, onClose, onSave }) {
             </label>
             <input name="images" value={form.images} onChange={handleChange}
               className="input-field" placeholder="https://example.com/img.jpg, ..." />
+          </div>
+
+          {/* Variants Management */}
+          <div className="border-t border-white/10 pt-4">
+            <h3 className="text-sm font-bold text-white mb-3">Product Variants</h3>
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              <input type="text" value={newVarSize} onChange={(e) => setNewVarSize(e.target.value)} placeholder="Size" className="input-field py-1 text-xs" />
+              <input type="text" value={newVarColor} onChange={(e) => setNewVarColor(e.target.value)} placeholder="Color" className="input-field py-1 text-xs" />
+              <input type="number" value={newVarPrice} onChange={(e) => setNewVarPrice(e.target.value)} placeholder="Price Override" className="input-field py-1 text-xs" />
+              <input type="number" value={newVarStock} onChange={(e) => setNewVarStock(e.target.value)} placeholder="Stock" className="input-field py-1 text-xs" />
+            </div>
+            <button type="button" onClick={handleAddVariant} className="btn-secondary w-full py-1 text-xs mb-3">
+              Add Variant
+            </button>
+            <div className="space-y-2">
+              {variants.map((v, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs bg-white/5 p-2 rounded-lg">
+                  <span className="text-gray-300">
+                    {v.size && `Size: ${v.size}`} {v.color && `Color: ${v.color}`} — ₹{v.price} ({v.stock} left)
+                  </span>
+                  <button type="button" onClick={() => handleRemoveVariant(idx)} className="text-red-400 hover:text-red-300">Remove</button>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -144,7 +209,68 @@ const CustomTooltip = ({ active, payload, label }) => {
       </div>
     );
   }
-  return null;
+  };
+
+const parseCSV = (text) => {
+  const lines = text.split(/\r?\n/).filter(line => line.trim());
+  if (lines.length < 2) {
+    throw new Error('CSV must contain a header row and at least one product row.');
+  }
+  
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+  const nameIdx = headers.indexOf('name');
+  const descIdx = headers.indexOf('description');
+  const priceIdx = headers.indexOf('price');
+  const catIdx = headers.indexOf('category');
+  const stockIdx = headers.indexOf('stock');
+  const imagesIdx = headers.indexOf('images');
+  
+  if (nameIdx === -1 || descIdx === -1 || priceIdx === -1 || catIdx === -1) {
+    throw new Error('CSV headers must include name, description, price, and category.');
+  }
+
+  const results = [];
+  
+  const parseCSVLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim().replace(/^["']|["']$/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim().replace(/^["']|["']$/g, ''));
+    return result;
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length < Math.max(nameIdx, descIdx, priceIdx, catIdx) + 1) continue;
+
+    const name = values[nameIdx];
+    const description = values[descIdx];
+    const priceStr = values[priceIdx];
+    const category = values[catIdx];
+
+    if (!name || !description || !priceStr || !category) continue;
+
+    results.push({
+      name,
+      description,
+      price: Number(priceStr) || 0,
+      category,
+      stock: stockIdx !== -1 ? Number(values[stockIdx]) || 0 : 0,
+      images: imagesIdx !== -1 && values[imagesIdx] ? values[imagesIdx].split(';').map(x => x.trim()).filter(Boolean) : [],
+    });
+  }
+  return results;
 };
 
 export default function SellerDashboard() {
@@ -173,6 +299,39 @@ export default function SellerDashboard() {
       setLoading(false);
     }
   }, []);
+
+  const handleCsvUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const text = evt.target?.result;
+      if (typeof text !== 'string') return;
+      
+      try {
+        const parsed = parseCSV(text);
+        if (parsed.length === 0) {
+          toast.error('No valid products found in CSV');
+          return;
+        }
+
+        const loadToast = toast.loading(`Uploading ${parsed.length} products...`);
+        try {
+          await bulkCreateProducts(parsed);
+          toast.success(`Successfully uploaded ${parsed.length} products!`, { id: loadToast });
+          fetchAll();
+        } catch (err) {
+          toast.error(err.response?.data?.message || 'Failed to bulk upload products', { id: loadToast });
+        }
+      } catch (err) {
+        toast.error(err.message || 'Error parsing CSV file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -254,11 +413,21 @@ export default function SellerDashboard() {
             {/* PRODUCTS TAB */}
             {activeTab === 'products' && (
               <div>
-                <div className="flex justify-end mb-4">
+                <div className="flex justify-end items-center gap-3 mb-4">
+                  <label className="btn-secondary flex items-center gap-2 cursor-pointer py-2.5 px-4 text-sm font-medium">
+                    <Upload size={16} />
+                    <span>Upload CSV</span>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleCsvUpload}
+                      className="hidden"
+                    />
+                  </label>
                   <button
                     id="add-product-btn"
                     onClick={() => { setModalProduct(null); setShowModal(true); }}
-                    className="btn-primary flex items-center gap-2"
+                    className="btn-primary flex items-center gap-2 py-2.5 px-4 text-sm font-medium"
                   >
                     <Plus size={16} /> Add Product
                   </button>
@@ -267,11 +436,24 @@ export default function SellerDashboard() {
                 {products.length === 0 ? (
                   <div className="card text-center py-16">
                     <Package size={48} className="mx-auto text-gray-600 mb-4" />
-                    <p className="text-gray-400 mb-4">No products yet. Create your first listing!</p>
-                    <button onClick={() => { setModalProduct(null); setShowModal(true); }} className="btn-primary">
-                      <Plus size={16} className="inline mr-2" />Add Product
-                    </button>
+                    <p className="text-gray-400 mb-4">No products yet. Create your first listing or upload a CSV!</p>
+                    <div className="flex justify-center gap-3">
+                      <label className="btn-secondary flex items-center gap-2 cursor-pointer">
+                        <Upload size={16} />
+                        <span>Upload CSV</span>
+                        <input
+                          type="file"
+                          accept=".csv"
+                          onChange={handleCsvUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <button onClick={() => { setModalProduct(null); setShowModal(true); }} className="btn-primary">
+                        <Plus size={16} className="inline mr-2" />Add Product
+                      </button>
+                    </div>
                   </div>
+
                 ) : (
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {products.map((p) => (

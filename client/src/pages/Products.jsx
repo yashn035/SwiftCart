@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight, Mic } from 'lucide-react';
 import { getProducts } from '../api/products';
 import ProductCard from '../components/ProductCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 const CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Home & Garden', 'Sports'];
 
@@ -14,6 +15,35 @@ export default function Products() {
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+
+  const startVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error('Voice search is not supported in this browser.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.onstart = () => {
+      setListening(true);
+      toast('Listening...', { icon: '🎙️' });
+    };
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      updateFilter('search', text);
+      toast.success(`Search: "${text}"`);
+      setListening(false);
+    };
+    recognition.onerror = () => {
+      toast.error('Voice recognition error.');
+      setListening(false);
+    };
+    recognition.onend = () => {
+      setListening(false);
+    };
+    recognition.start();
+  };
 
   const [filters, setFilters] = useState({
     search: searchParams.get('search') || '',
@@ -86,12 +116,20 @@ export default function Products() {
               className="input-field pl-11 pr-10"
               placeholder="Search products..."
             />
-            {filters.search && (
+            {filters.search ? (
               <button
                 onClick={() => updateFilter('search', '')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
               >
                 <X size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startVoiceSearch}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 ${listening ? 'text-primary-400 animate-pulse' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                <Mic size={16} />
               </button>
             )}
           </div>

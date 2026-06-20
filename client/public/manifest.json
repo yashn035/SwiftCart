@@ -1,0 +1,30 @@
+{
+  "short_name": "SwiftCart",
+  "name": "SwiftCart Marketplace",
+  "description": "Premium Multi-vendor e-commerce marketplace featuring AI shopping assistants and real-time tracking.",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0a0a14",
+  "theme_color": "#7c3aed",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["shopping", "productivity"]
+}

@@ -6,8 +6,12 @@ const Product = require('../models/Product');
  */
 const getProducts = async (req, res) => {
   try {
-    const { search, category, minPrice, maxPrice, page = 1, limit = 12 } = req.query;
+    const { search, category, minPrice, maxPrice, sellerId, page = 1, limit = 12 } = req.query;
     const query = {};
+
+    if (sellerId) {
+      query.sellerId = sellerId;
+    }
 
     if (search) {
       // Use regex search as fallback for text index compatibility
@@ -144,4 +148,44 @@ const getSellerProducts = async (req, res) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct, getSellerProducts };
+const bulkCreateProducts = async (req, res) => {
+  try {
+    const productsData = req.body;
+    if (!Array.isArray(productsData) || productsData.length === 0) {
+      return res.status(400).json({ message: 'Payload must be a non-empty array of products' });
+    }
+
+    const parsedProducts = productsData.map((p) => {
+      if (!p.name || !p.description || p.price === undefined || !p.category) {
+        throw new Error('Required fields missing for some products: name, description, price, category');
+      }
+      return {
+        sellerId: req.user._id,
+        name: p.name,
+        description: p.description,
+        price: Number(p.price),
+        category: p.category,
+        stock: Number(p.stock) || 0,
+        images: p.images || [],
+        variants: p.variants || [],
+        isApproved: true, // Auto-approve on dev bulk upload
+      };
+    });
+
+    const products = await Product.insertMany(parsedProducts);
+    res.status(201).json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  getProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getSellerProducts,
+  bulkCreateProducts,
+};
+
